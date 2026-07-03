@@ -1,0 +1,32 @@
+const int sensorPin = 34; // GPIO34 (entrada analógica)
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+  Serial.println("Probando sensor CNY70...");
+}
+
+void loop() {
+  int valor = analogRead(sensorPin);
+
+  Serial.print("Valor sensor: ");
+  Serial.println(valor);
+
+  delay(300);
+}
+
+//codigo distinto para determinar blanco o negro
+
+int umbral = 2000;
+
+void loop() {
+  int valor = analogRead(sensorPin);
+
+  if (valor > umbral) {
+    Serial.println("BLANCO");
+  } else {
+    Serial.println("NEGRO");
+  }
+
+  delay(300);
+}

@@ -1,0 +1,377 @@
+1. Librerías
+#include <Wire.h>
+#include <RTClib.h>
+#include <LiquidCrystal_I2C.h>
+Wire.h → comunicación I2C.
+RTClib.h → manejo del reloj DS3231.
+LiquidCrystal_I2C.h → control de la pantalla LCD.
+2. Objetos
+RTC_DS3231 rtc;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+Se crean:
+
+rtc → para acceder al reloj.
+lcd → pantalla LCD dirección I2C 0x27, tamaño 16x2.
+3. Definición de pines
+Sensores
+#define CNY_LUNES      36
+#define CNY_MARTES     39
+#define CNY_MIERCOLES  34
+#define CNY_JUEVES     35
+#define CNY_VIERNES    32
+#define CNY_SABADO     33
+#define CNY_DOMINGO    27
+
+Hay un sensor para cada compartimento de pastillas.
+
+Por ejemplo:
+
+Lunes → GPIO 36
+Martes → GPIO 39
+etc.
+
+La idea es que cada sensor detecte si la pastilla sigue presente o si se retiró.
+
+Indicadores
+#define LED_VERDE      19
+#define LED_ROJO       18
+#define BUZZER         23
+LED verde → pastilla tomada.
+LED rojo → pendiente.
+Buzzer → alarma sonora.
+4. Configuración principal
+const int ALARM_HOUR = 10;
+const int ALARM_MINUTE = 35;
+
+La alarma se activará todos los días a:
+
+10:35
+
+const unsigned long BUZZER_TIME = 90000;
+
+90.000 ms = 90 segundos = 1,5 minutos.
+
+const int UMBRAL_APERTURA = 300;
+
+Valor límite del sensor.
+
+Si la lectura baja de 300:
+
+lectura < 300
+
+el sistema interpreta que la pastilla fue retirada.
+
+5. Variables de estado
+bool pastillaTomada = false;
+
+Indica si la pastilla del día ya fue tomada.
+
+bool alarmaActiva = false;
+
+Indica si el buzzer está sonando.
+
+unsigned long buzzerStart = 0;
+
+Guarda el instante en que comenzó la alarma.
+
+int ultimoDiaMes = -1;
+
+Sirve para detectar cuándo cambia el día.
+
+6. Función obtenerSensorDia()
+int obtenerSensorDia(int diaSemana)
+
+Convierte el día de la semana en el pin correspondiente.
+
+Ejemplo:
+
+diaSemana = 1
+
+retorna:
+
+CNY_LUNES
+
+o sea GPIO 36.
+
+Tabla:
+
+Día	Retorna
+0	Domingo
+1	Lunes
+2	Martes
+3	Miércoles
+4	Jueves
+5	Viernes
+6	Sábado
+7. Función nombreDia()
+String nombreDia(int diaSemana)
+
+Convierte el número del día a texto.
+
+Ejemplo:
+
+1 → "LUN"
+5 → "VIE"
+0 → "DOM"
+8. setup()
+
+Se ejecuta una sola vez al encender.
+
+Puerto serie
+Serial.begin(115200);
+
+Para ver datos en el monitor serie.
+
+Configurar pines
+pinMode(...);
+
+Define entradas y salidas.
+
+Estado inicial
+digitalWrite(LED_VERDE, LOW);
+digitalWrite(LED_ROJO, HIGH);
+
+Al arrancar:
+
+🔴 rojo encendido
+
+🟢 verde apagado
+
+porque aún no se tomó la pastilla.
+
+I2C
+Wire.begin(21,22);
+
+ESP32:
+
+SDA = 21
+SCL = 22
+LCD
+lcd.init();
+lcd.backlight();
+
+Inicializa pantalla y activa iluminación.
+
+RTC
+if(!rtc.begin())
+
+Si no encuentra el DS3231:
+
+lcd.print("ERROR RTC");
+while(true);
+
+se detiene para siempre.
+
+Guardar día actual
+DateTime now = rtc.now();
+ultimoDiaMes = now.day();
+
+Así sabe cuándo cambia el día.
+
+9. loop()
+
+Se repite infinitamente.
+
+10. Leer fecha y hora
+DateTime now = rtc.now();
+
+Obtiene:
+
+hora
+minuto
+segundo
+día
+mes
+año
+
+actuales.
+
+11. Reinicio diario
+if(now.day() != ultimoDiaMes)
+
+Cuando cambia la fecha:
+
+Ejemplo:
+
+31 → 1
+
+se reinicia todo.
+
+pastillaTomada = false;
+
+Nueva pastilla pendiente.
+
+alarmaActiva = false;
+
+Apaga alarma.
+
+LED_ROJO = ON
+LED_VERDE = OFF
+
+Vuelve al estado inicial.
+
+12. Mostrar hora
+sprintf(buffer,"%02d:%02d:%02d",
+
+Genera:
+
+10:35:22
+
+Luego:
+
+lcd.print(buffer);
+
+Lo muestra en la primera línea.
+
+13. Mostrar estado
+
+Si ya tomó la pastilla:
+
+LUN TOMADA
+
+Si no:
+
+LUN PENDIENTE
+14. Activar alarma
+if(!pastillaTomada &&
+   now.hour() == ALARM_HOUR &&
+   now.minute() == ALARM_MINUTE &&
+   !alarmaActiva)
+
+Si:
+
+no tomó la pastilla
+son las 10:35
+la alarma no está activa
+
+entonces:
+
+alarmaActiva = true;
+
+y guarda el tiempo inicial.
+
+15. Manejo del buzzer
+
+Mientras:
+
+alarmaActiva == true
+
+ejecuta:
+
+tone(BUZZER, 2500);
+
+Genera un sonido de 2500 Hz.
+
+Cuando pasan:
+
+90000 ms
+
+(1,5 minutos)
+
+ejecuta:
+
+noTone(BUZZER);
+
+y apaga la alarma.
+
+16. Elegir el sensor del día
+int pinSensor = obtenerSensorDia(now.dayOfTheWeek());
+
+Ejemplo:
+
+Si es miércoles:
+
+pinSensor = 34
+
+Solo revisa el compartimento correspondiente a ese día.
+
+17. Filtrado de ruido
+for(int i=0;i<10;i++)
+{
+    suma += analogRead(pinSensor);
+}
+
+Lee 10 veces el sensor.
+
+Luego:
+
+lectura = suma / 10;
+
+Calcula el promedio.
+
+Esto evita falsas detecciones.
+
+18. Mostrar lectura
+
+Ejemplo en el monitor serie:
+
+Sensor LUN: 512
+
+o
+
+Sensor LUN: 180
+19. Detectar extracción de la pastilla
+if(!pastillaTomada &&
+   lectura < UMBRAL_APERTURA)
+
+Si la lectura cae por debajo de 300:
+
+lectura < 300
+
+se considera que la pastilla fue retirada.
+
+Entonces:
+
+pastillaTomada = true;
+
+Y además:
+
+LED_ROJO OFF
+LED_VERDE ON
+
+Indicando éxito.
+
+También:
+
+noTone(BUZZER);
+alarmaActiva = false;
+
+Si estaba sonando, se detiene.
+
+Monitor serie:
+
+PASTILLA TOMADA
+Resumen general del funcionamiento
+
+Cada día el sistema:
+
+Detecta qué día es mediante el RTC.
+Observa únicamente el sensor correspondiente a ese día.
+Muestra hora y estado en la LCD.
+A las 10:35 activa una alarma si la pastilla no fue retirada.
+Si el sensor detecta que la pastilla fue sacada:
+marca "tomada",
+apaga la alarma,
+enciende LED verde.
+A medianoche reinicia el estado para el día siguiente.
+
+En forma de flujo:
+
+Nuevo día
+    ↓
+Pastilla pendiente
+    ↓
+10:35
+    ↓
+Suena buzzer
+    ↓
+Usuario retira pastilla
+    ↓
+Sensor detecta cambio
+    ↓
+LED verde
+    ↓
+Buzzer apagado
+    ↓
+Esperar próximo día
